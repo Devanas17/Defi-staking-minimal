@@ -30,10 +30,10 @@ module.exports = {
     ],
   },
   defaultNetwork: "hardhat",
-  networks: {
-    goerli: {
-      url: [process.env.RPC_URL],
-      accounts: [process.env.PRIVATE_KEY],
-    },
-  },
+  // networks: {
+  //   goerli: {
+  //     url: [process.env.RPC_URL],
+  //     accounts: [process.env.PRIVATE_KEY],
+  //   },
+  // },
 };
