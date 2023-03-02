@@ -31,7 +31,7 @@ module.exports = {
   },
   defaultNetwork: "hardhat",
   // networks: {
-  //   goerli: {
+  //   matic: {
   //     url: [process.env.RPC_URL],
   //     accounts: [process.env.PRIVATE_KEY],
   //   },
