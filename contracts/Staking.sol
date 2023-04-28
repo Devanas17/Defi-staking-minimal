@@ -2,26 +2,113 @@
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 error Staking__TransferFailed();
 error Staking__NeedMoreThanZero();
 
-contract Staking {
+contract Staking is ReentrancyGuard {
+    IERC20 public s_rewardsToken;
     IERC20 public s_stakingToken;
-    IERC20 public s_rewardToken;
 
-    // someones address -> how much they staked
-    mapping(address => uint256) public s_balances;
-    // a mapping how much each address has been paid
+    // This is the reward token per second
+    // Which will be multiplied by the tokens the user staked divided by the total
+    // This ensures a steady reward rate of the platform
+    // So the more users stake, the less for everyone who is staking.
+    uint256 public constant REWARD_RATE = 100;
+    uint256 public s_lastUpdateTime;
+    uint256 public s_rewardPerTokenStored;
+
     mapping(address => uint256) public s_userRewardPerTokenPaid;
-    // a mapping how much reward each address has
     mapping(address => uint256) public s_rewards;
 
-    uint256 public constant REWARD_RATE = 100;
-    uint256 public s_totalSupply;
-    uint256 public s_rewardPerTokenStored;
-    uint256 public s_lastUpdateTime;
+    uint256 private s_totalSupply;
+    mapping(address => uint256) public s_balances;
 
+    event Staked(address indexed user, uint256 indexed amount);
+    event WithdrewStake(address indexed user, uint256 indexed amount);
+    event RewardsClaimed(address indexed user, uint256 indexed amount);
+
+    constructor(address stakingToken, address rewardsToken) {
+        s_stakingToken = IERC20(stakingToken);
+        s_rewardsToken = IERC20(rewardsToken);
+    }
+
+    /**
+     * @notice How much reward a token gets based on how long it's been in and during which "snapshots"
+     */
+    function rewardPerToken() public view returns (uint256) {
+        if (s_totalSupply == 0) {
+            return s_rewardPerTokenStored;
+        }
+        return
+            s_rewardPerTokenStored +
+            (((block.timestamp - s_lastUpdateTime) * REWARD_RATE * 1e18) /
+                s_totalSupply);
+    }
+
+    /**
+     * @notice How much reward a user has earned
+     */
+    function earned(address account) public view returns (uint256) {
+        return
+            ((s_balances[account] *
+                (rewardPerToken() - s_userRewardPerTokenPaid[account])) /
+                1e18) + s_rewards[account];
+    }
+
+    /**
+     * @notice Deposit tokens into this contract
+     * @param amount | How much to stake
+     */
+    function stake(
+        uint256 amount
+    ) external updateReward(msg.sender) nonReentrant moreThanZero(amount) {
+        s_totalSupply += amount;
+        s_balances[msg.sender] += amount;
+        emit Staked(msg.sender, amount);
+        bool success = s_stakingToken.transferFrom(
+            msg.sender,
+            address(this),
+            amount
+        );
+        if (!success) {
+            revert Staking__TransferFailed();
+        }
+    }
+
+    /**
+     * @notice Withdraw tokens from this contract
+     * @param amount | How much to withdraw
+     */
+    function withdraw(
+        uint256 amount
+    ) external updateReward(msg.sender) nonReentrant {
+        s_totalSupply -= amount;
+        s_balances[msg.sender] -= amount;
+        emit WithdrewStake(msg.sender, amount);
+        bool success = s_stakingToken.transfer(msg.sender, amount);
+        if (!success) {
+            revert Staking__TransferFailed();
+        }
+    }
+
+    /**
+     * @notice User claims their tokens
+     */
+    function claimReward() external updateReward(msg.sender) nonReentrant {
+        uint256 reward = s_rewards[msg.sender];
+        s_rewards[msg.sender] = 0;
+        emit RewardsClaimed(msg.sender, reward);
+        bool success = s_rewardsToken.transfer(msg.sender, reward);
+        if (!success) {
+            revert Staking__TransferFailed();
+        }
+    }
+
+    /********************/
+    /* Modifiers Functions */
+    /********************/
     modifier updateReward(address account) {
         s_rewardPerTokenStored = rewardPerToken();
         s_lastUpdateTime = block.timestamp;
@@ -37,73 +124,11 @@ contract Staking {
         _;
     }
 
-    constructor(address stakingToken, address rewardToken) {
-        s_stakingToken = IERC20(stakingToken);
-        s_rewardToken = IERC20(rewardToken);
-    }
-
-    function earned(address acccount) public view returns (uint256) {
-        uint256 currentBalance = s_balances[acccount];
-        // How much they have been paid already
-        uint256 amountPaid = s_userRewardPerTokenPaid[acccount];
-        uint256 currentRewardPerToken = rewardPerToken();
-        uint256 pastRewards = s_rewards[acccount];
-        uint256 earn = ((currentBalance *
-            (currentRewardPerToken - amountPaid)) / 1e18) + pastRewards;
-
-        return earn;
-    }
-
-    function rewardPerToken() public view returns (uint256) {
-        if (s_totalSupply == 0) {
-            return s_rewardPerTokenStored;
-        }
-        return
-            s_rewardPerTokenStored +
-            (
-                (((block.timestamp - s_lastUpdateTime) * REWARD_RATE * 1e18) /
-                    s_totalSupply)
-            );
-    }
-
-    function stake(
-        uint256 amount
-    ) public updateReward(msg.sender) moreThanZero(amount) {
-        // Keep track of how much this user has staked
-        // keep track of how much token we have total
-        // Transfer the tokens to this contract
-
-        s_balances[msg.sender] += amount;
-        s_totalSupply += amount;
-
-        bool success = s_stakingToken.transferFrom(
-            msg.sender,
-            address(this),
-            amount
-        );
-        if (!success) {
-            revert Staking__TransferFailed();
-        }
-    }
-
-    function withDraw(
-        uint256 amount
-    ) external updateReward(msg.sender) moreThanZero(amount) {
-        s_balances[msg.sender] -= amount;
-        s_totalSupply -= amount;
-        bool success = s_stakingToken.transfer(msg.sender, amount);
-        if (!success) {
-            revert Staking__TransferFailed();
-        }
-    }
-
-    function claimReward() external updateReward(msg.sender) {
-        uint256 reward = s_rewards[msg.sender];
-        bool success = s_rewardToken.transfer(msg.sender, reward);
-        if (!success) {
-            revert Staking__TransferFailed();
-        }
-    }
+    /********************/
+    /* Getter Functions */
+    /********************/
+    // Ideally, we'd have getter functions for all our s_ variables we want exposed, and set them all to private.
+    // But, for the purpose of this demo, we've left them public for simplicity.
 
     function getStaked(address account) public view returns (uint256) {
         return s_balances[account];

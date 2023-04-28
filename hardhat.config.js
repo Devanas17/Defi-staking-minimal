@@ -32,7 +32,7 @@ module.exports = {
   defaultNetwork: "hardhat",
   // networks: {
   //   matic: {
-  //     url: [process.env.RPC_URL],
+  //     url: [process.env.MATIC_RPC_URL],
   //     accounts: [process.env.PRIVATE_KEY],
   //   },
   // },
