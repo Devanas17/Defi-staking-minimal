@@ -34,6 +34,24 @@ contract Staking is ReentrancyGuard {
         s_rewardsToken = IERC20(rewardsToken);
     }
 
+    /********************/
+    /* Modifiers Functions */
+    /********************/
+    modifier updateReward(address account) {
+        s_rewardPerTokenStored = rewardPerToken();
+        s_lastUpdateTime = block.timestamp;
+        s_rewards[account] = earned(account);
+        s_userRewardPerTokenPaid[account] = s_rewardPerTokenStored;
+        _;
+    }
+
+    modifier moreThanZero(uint256 amount) {
+        if (amount == 0) {
+            revert Staking__NeedMoreThanZero();
+        }
+        _;
+    }
+
     /**
      * @notice How much reward a token gets based on how long it's been in and during which "snapshots"
      */
@@ -104,24 +122,6 @@ contract Staking is ReentrancyGuard {
         if (!success) {
             revert Staking__TransferFailed();
         }
-    }
-
-    /********************/
-    /* Modifiers Functions */
-    /********************/
-    modifier updateReward(address account) {
-        s_rewardPerTokenStored = rewardPerToken();
-        s_lastUpdateTime = block.timestamp;
-        s_rewards[account] = earned(account);
-        s_userRewardPerTokenPaid[account] = s_rewardPerTokenStored;
-        _;
-    }
-
-    modifier moreThanZero(uint256 amount) {
-        if (amount == 0) {
-            revert Staking__NeedMoreThanZero();
-        }
-        _;
     }
 
     /********************/
